@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+  :root {
+    font-feature-settings: 'ss01' 1;
+    color-scheme: light;
+  }
+
+  html {
+    @apply bg-[#f6f2ea];
+  }
+
+  body {
+    @apply font-sans antialiased text-stone-800 bg-[#f6f2ea];
+  }
+}
+
+@layer components {
+  .dashboard-shell {
+    @apply relative min-h-screen overflow-hidden bg-[linear-gradient(180deg,#f8f5ef_0%,#f2eee7_100%)];
+  }
+
+  .glass-panel {
+    @apply rounded-[1.75rem] border border-stone-200/80 bg-white/[0.92] shadow-sm backdrop-blur;
+  }
+
+  .dashboard-panel {
+    @apply rounded-[1.75rem] border border-stone-200 bg-white/[0.94] shadow-sm;
+  }
+
+  .panel-kicker {
+    @apply text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500;
+  }
+
+  .panel-title {
+    @apply mt-2 text-2xl font-semibold tracking-tight text-stone-950;
+  }
+
+  .panel-subtitle {
+    @apply mt-2 text-sm leading-6 text-stone-500;
+  }
+
+  .dashboard-nav-item {
+    @apply flex items-center rounded-2xl border border-stone-200 bg-white px-3 py-3 font-medium text-stone-600 transition hover:border-stone-300 hover:text-stone-950;
+  }
+}
