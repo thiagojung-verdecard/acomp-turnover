@@ -6,7 +6,8 @@ export const dynamic = 'force-dynamic'
 async function getInitialTurnoverData(period: Period): Promise<TurnoverPayload> {
   const headerStore = headers()
   const host = headerStore.get('host') ?? 'localhost:3000'
-  const protocol = host.includes('localhost') || host.startsWith('127.0.0.1') ? 'http' : 'https'
+  const forwardedProto = headerStore.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  const protocol = forwardedProto || 'http'
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15000)
