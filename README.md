@@ -24,6 +24,87 @@ pnpm dev
 # Open http://localhost:3000
 ```
 
+## 🖥️ Execucao Na VM (HML)
+
+Fluxo validado para publicar o dashboard na VM usando dados reais do pool e servir em `3001`.
+
+### 1. Preparar ambiente
+
+```bash
+cd /home/admin/acomp_turnover/acomp-turnover
+source /root/miniconda3/etc/profile.d/conda.sh
+conda activate DASH_TURNOVER
+mkdir -p logs
+```
+
+### 2. Configurar `.env.local`
+
+```bash
+cat > .env.local << 'EOF'
+POOL_HOST=172.22.1.202
+POOL_PORT=8080
+POOL_DATABASE=FABRIC_THIAGO
+POOL_RUNTIME=Linux
+TURNOVER_ALLOW_MOCK_FALLBACK=false
+EOF
+```
+
+### 3. Validar conectividade com o pool
+
+```bash
+curl -i -m 10 -X POST http://172.22.1.202:8080/read_sql/ \
+  -H "Content-Type: application/json" \
+  -d '{"database":"FABRIC_THIAGO","sql":"SELECT 1 AS ok","timeout":10}'
+```
+
+Resultado esperado: `HTTP/1.1 200 OK` com payload parecido com `"[{\"ok\":1}]"`.
+
+### 4. Rebuild e restart do Next em producao
+
+```bash
+git pull origin main
+pkill -f "next start" || true
+pkill -f "next-server" || true
+rm -rf .next
+pnpm run build
+
+nohup bash -lc '
+  source /root/miniconda3/etc/profile.d/conda.sh
+  conda activate DASH_TURNOVER
+  export PORT=3001
+  export HOSTNAME=0.0.0.0
+  pnpm run start
+' > logs/frontend.log 2>&1 &
+```
+
+### 5. Validar a aplicacao
+
+```bash
+ss -tulpn | grep ':3001'
+tail -40 logs/frontend.log
+curl -I http://localhost:3001
+curl -s http://localhost:3001/api/dashboard/turnover?period=30d | grep -o '"mode":"[^"]*"'
+curl -s http://localhost:3001 | grep -o 'Dashboard de Turnover RH\|Nao foi possivel renderizar o dashboard' | head
+```
+
+Resultado esperado:
+- `HTTP/1.1 200 OK`
+- `"mode":"pool"`
+- `Dashboard de Turnover RH`
+
+### 6. URL de acesso
+
+```text
+http://10.0.6.7:3001/
+```
+
+### 7. Parar a aplicacao
+
+```bash
+pkill -f "next start" || true
+pkill -f "next-server" || true
+```
+
 # Dashboard Acompanhamento Turnover
 
 Migração moderna do script de acompanhamento de turnover legado para Next.js + TypeScript + React com conexão ao pool HTTP interno.
@@ -33,7 +114,7 @@ Migração moderna do script de acompanhamento de turnover legado para Next.js +
 ### ✅ Implementado
 - **Frontend**: Dashboard completo React + Recharts com KPIs, gráficos de evolução, volumetria de risco
 - **Backend**: API Next.js `/api/dashboard/turnover` com processamento de dados real
-- **Integração**: Conexão HTTP ao pool interno (172.17.0.1:8080) seguindo padrão 0007_acomp_lim_auto
+- **Integração**: Conexão HTTP ao pool interno (172.22.1.202:8080 na VM HML) seguindo padrão 0007_acomp_lim_auto
 - **Fallback**: Mock controlado quando pool indisponível (marcar modo e avisar na UI)
 - **Lógica legada**: Processamento completo reproduzido (deduplicação CPF/dia/geo, risco por menor peso, agregações)
 
@@ -60,7 +141,7 @@ cat .env.example > .env.local
 
 # Editar .env.local com host/port/database do seu pool:
 POOL_RUNTIME=Linux
-POOL_HOST=172.17.0.1          # Ou seu host pool
+POOL_HOST=172.22.1.202        # Ou seu host pool
 POOL_PORT=8080
 POOL_DATABASE=FABRIC_THIAGO
 TURNOVER_ALLOW_MOCK_FALLBACK=true  # Fallback quando pool indisponível
@@ -108,7 +189,7 @@ A integração com o pool segue exatamente o padrão do projeto 0007 (acomp_lim_
 ### Flow de Dados
 1. **Frontend** (React) → chamada GET `/api/dashboard/turnover?period=30d`
 2. **Backend** (Next.js API Route) → Conecta ao pool via HTTP POST
-3. **Pool** (172.17.0.1:8080) → POST `/read_sql/` com SQL + database + timeout
+3. **Pool** (172.22.1.202:8080 na VM HML) → POST `/read_sql/` com SQL + database + timeout
 4. Response → JSON (string-encoded) de linhas de dados
 5. **Processing** → Parse, extração, limpeza, classificação e agregação
 6. **Frontend** recebe JSON tipado com KPIs, série diária, distribuição, alertas
@@ -117,7 +198,7 @@ A integração com o pool segue exatamente o padrão do projeto 0007 (acomp_lim_
 
 ```ini
 POOL_RUNTIME=Linux              # Linux ou Windows — seleciona host padrão
-POOL_HOST=172.17.0.1            # Host HTTP do pool (override padrão)
+POOL_HOST=172.22.1.202          # Host HTTP do pool (override padrão na VM HML)
 POOL_PORT=8080                  # Porta HTTP (padrão 8080)
 POOL_DATABASE=FABRIC_THIAGO     # Database lógica
 TURNOVER_ALLOW_MOCK_FALLBACK=true  # Ativa fallback determinístico quando offline
@@ -236,7 +317,7 @@ NEXT_PUBLIC_APP_NAME=Turnover Dashboard
 
 # Servidor (privado)
 POOL_RUNTIME=Linux
-POOL_HOST=172.17.0.1
+POOL_HOST=172.22.1.202
 POOL_PORT=8080
 POOL_DATABASE=FABRIC_THIAGO
 TURNOVER_ALLOW_MOCK_FALLBACK=true
