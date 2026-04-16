@@ -6,13 +6,13 @@ export const dynamic = 'force-dynamic'
 async function getInitialTurnoverData(period: Period): Promise<TurnoverPayload> {
   const headerStore = headers()
   const host = headerStore.get('host') ?? 'localhost:3000'
-  const forwardedProto = headerStore.get('x-forwarded-proto')?.split(',')[0]?.trim()
-  const protocol = forwardedProto || 'http'
+  const port = host.split(':')[1] ?? process.env.PORT ?? '3000'
+  const internalBaseUrl = process.env.INTERNAL_API_BASE_URL ?? `http://127.0.0.1:${port}`
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15000)
 
-  const response = await fetch(`${protocol}://${host}/api/dashboard/turnover?period=${period}`, {
+  const response = await fetch(`${internalBaseUrl}/api/dashboard/turnover?period=${period}`, {
     cache: 'no-store',
     signal: controller.signal,
   }).finally(() => clearTimeout(timeout))
