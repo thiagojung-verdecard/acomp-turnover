@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:vm": "next dev --hostname 0.0.0.0 --port 3001",
     "up": "bash scripts/up.sh",
     "up:ps": "powershell -ExecutionPolicy Bypass -File scripts/up.ps1",
     "build": "next build",
