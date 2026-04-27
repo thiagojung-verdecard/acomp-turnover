@@ -55,6 +55,19 @@ interface DistributionRow {
   pct: number
 }
 
+interface RawDistributionGeneralRow {
+  risco: (typeof RISCOS)[number]
+  count: number
+  pct: number
+}
+
+interface RawDistributionByCargoRow {
+  cargo: string
+  risco: (typeof RISCOS)[number]
+  count: number
+  pct: number
+}
+
 interface TurnoverPayload {
   period: Period
   generatedAt: string
@@ -79,6 +92,11 @@ interface TurnoverPayload {
   }
   dailyScoreByCargo: DailyRow[]
   riskDistribution: DistributionRow[]
+  rawPassages: {
+    total: number
+    riskDistributionGeneral: RawDistributionGeneralRow[]
+    riskDistributionByCargo: RawDistributionByCargoRow[]
+  }
   alertas: Array<{ cargo: string; mensagem: string }>
 }
 
@@ -299,7 +317,7 @@ async function fetchPoolRows(period: Period): Promise<InputRow[]> {
   return rowsFromPoolBody(body)
 }
 
-function extractRows(rawRows: InputRow[]): ExtractedRow[] {
+function extractRows(rawRows: InputRow[], deduplicateByCpfAndDay = true): ExtractedRow[] {
   if (rawRows.length === 0) return []
 
   const normalizedRows = rawRows.map((row) => normalizePoolRowKeys(row))
@@ -329,6 +347,8 @@ function extractRows(rawRows: InputRow[]): ExtractedRow[] {
   })
 
   validRows.sort((a, b) => a.DATAREF.getTime() - b.DATAREF.getTime())
+
+  if (!deduplicateByCpfAndDay) return validRows
 
   const dedup = new Map<string, ExtractedRow>()
   validRows.forEach((row) => {
@@ -451,6 +471,55 @@ function buildDistributionFromClassified(rows: ClassifiedRow[]): DistributionRow
   return out
 }
 
+function buildRawDistributions(rows: ExtractedRow[]): {
+  riskDistributionGeneral: RawDistributionGeneralRow[]
+  riskDistributionByCargo: RawDistributionByCargoRow[]
+} {
+  const byRisk = new Map<(typeof RISCOS)[number], number>()
+  const byCargoRisk = new Map<string, number>()
+  const byCargoTotal = new Map<string, number>()
+
+  rows.forEach((row) => {
+    const risk = fromRiskWeight(toRiskWeight(row.RISCO))
+    byRisk.set(risk, (byRisk.get(risk) ?? 0) + 1)
+
+    const key = `${row.ULTIMA_FUNCAO}__${risk}`
+    byCargoRisk.set(key, (byCargoRisk.get(key) ?? 0) + 1)
+    byCargoTotal.set(row.ULTIMA_FUNCAO, (byCargoTotal.get(row.ULTIMA_FUNCAO) ?? 0) + 1)
+  })
+
+  const totalRows = Math.max(rows.length, 1)
+  const riskDistributionGeneral = RISCOS.map((risco) => {
+    const count = byRisk.get(risco) ?? 0
+    return {
+      risco,
+      count,
+      pct: round((count / totalRows) * 100, 1),
+    }
+  })
+
+  const cargos = Array.from(byCargoTotal.keys()).sort((a, b) => a.localeCompare(b))
+  const riskDistributionByCargo: RawDistributionByCargoRow[] = []
+  cargos.forEach((cargo) => {
+    const totalCargo = byCargoTotal.get(cargo) ?? 1
+    RISCOS.forEach((risco) => {
+      const key = `${cargo}__${risco}`
+      const count = byCargoRisk.get(key) ?? 0
+      riskDistributionByCargo.push({
+        cargo,
+        risco,
+        count,
+        pct: round((count / totalCargo) * 100, 1),
+      })
+    })
+  })
+
+  return {
+    riskDistributionGeneral,
+    riskDistributionByCargo,
+  }
+}
+
 function mean(values: number[]): number {
   if (values.length === 0) return 0
   return values.reduce((acc, v) => acc + v, 0) / values.length
@@ -465,9 +534,11 @@ function std(values: number[]): number {
 
 function assemblePayload(period: Period, rawRows: InputRow[], mode: 'pool' | 'mock-fallback', warning?: string): TurnoverPayload {
   const extractedRows = extractRows(rawRows)
+  const extractedRowsWithoutDedup = extractRows(rawRows, false)
   const classifiedRows = processAndClassify(extractedRows)
   const dailyRows = buildDailyRows(classifiedRows)
   const distribution = buildDistributionFromClassified(classifiedRows)
+  const rawDistributions = buildRawDistributions(extractedRowsWithoutDedup)
 
   const scoreValues = classifiedRows.map((r) => r.SCORE_TURNOVER)
   const mediaGeral = mean(scoreValues)
@@ -515,6 +586,11 @@ function assemblePayload(period: Period, rawRows: InputRow[], mode: 'pool' | 'mo
     },
     dailyScoreByCargo: dailyRows,
     riskDistribution: distribution,
+    rawPassages: {
+      total: extractedRowsWithoutDedup.length,
+      riskDistributionGeneral: rawDistributions.riskDistributionGeneral,
+      riskDistributionByCargo: rawDistributions.riskDistributionByCargo,
+    },
     alertas,
   }
 }

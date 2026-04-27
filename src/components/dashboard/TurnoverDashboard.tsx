@@ -54,6 +54,20 @@ export interface TurnoverPayload {
     count: number
     pct: number
   }>
+  rawPassages: {
+    total: number
+    riskDistributionGeneral: Array<{
+      risco: RiskLevel
+      count: number
+      pct: number
+    }>
+    riskDistributionByCargo: Array<{
+      cargo: string
+      risco: RiskLevel
+      count: number
+      pct: number
+    }>
+  }
   alertas: Array<{ cargo: string; mensagem: string }>
 }
 
@@ -320,6 +334,7 @@ function ExecutiveSidebar({ data }: { data: TurnoverPayload }) {
       <nav className="mt-5 space-y-2 text-sm">
         <a href="#overview" className="dashboard-nav-item">Visão geral</a>
         <a href="#timeseries" className="dashboard-nav-item">Evolução temporal</a>
+        <a href="#raw-passages" className="dashboard-nav-item">Passagens brutas</a>
         <a href="#distribution" className="dashboard-nav-item">Distribuição de risco</a>
         <a href="#roles" className="dashboard-nav-item">Ranking por cargo</a>
         <a href="#data-quality" className="dashboard-nav-item">Qualidade da ingestão</a>
@@ -328,7 +343,6 @@ function ExecutiveSidebar({ data }: { data: TurnoverPayload }) {
       <div className="mt-6 rounded-2xl bg-stone-50 p-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-400">Fonte ativa</p>
         <p className="mt-2 text-sm font-medium text-stone-900">{sourceLabel}</p>
-        <p className="mt-1 text-xs leading-5 text-stone-500">{data.source.table}</p>
       </div>
 
       <div className="mt-4 grid gap-3">
@@ -495,6 +509,22 @@ export function TurnoverDashboard({ initialData, initialPeriod }: Props) {
     return Object.values(byCargo)
   }, [data])
 
+  const rawGeneralChartData = useMemo(
+    () => data.rawPassages.riskDistributionGeneral,
+    [data.rawPassages.riskDistributionGeneral]
+  )
+
+  const rawByCargoChartData = useMemo(() => {
+    const byCargo: Record<string, { cargo: string; BAIXO: number; MEDIO: number; ALTO: number; MUITO_ALTO: number }> = {}
+    data.rawPassages.riskDistributionByCargo.forEach((row) => {
+      if (!byCargo[row.cargo]) {
+        byCargo[row.cargo] = { cargo: row.cargo, BAIXO: 0, MEDIO: 0, ALTO: 0, MUITO_ALTO: 0 }
+      }
+      byCargo[row.cargo][row.risco] = row.count
+    })
+    return Object.values(byCargo)
+  }, [data.rawPassages.riskDistributionByCargo])
+
   const cut = data.cutsByRole[selectedCargo]
 
   return (
@@ -528,7 +558,7 @@ export function TurnoverDashboard({ initialData, initialPeriod }: Props) {
           <div className="flex flex-wrap items-center gap-3">
             <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm shadow-sm">
               <p className="text-[10px] uppercase tracking-[0.16em] text-stone-400">Origem</p>
-              <p className="mt-1 font-medium text-stone-800">{data.source.table}</p>
+              <p className="mt-1 font-medium text-stone-800">{data.source.mode === 'pool' ? 'Banco de dados' : 'Fallback local'}</p>
             </div>
             <label className="text-sm font-medium text-stone-600" htmlFor="period">Período</label>
             <select
@@ -634,6 +664,60 @@ export function TurnoverDashboard({ initialData, initialPeriod }: Props) {
                 </ResponsiveContainer>
               )}
             </div>
+              </article>
+            </section>
+
+            <section id="raw-passages" className="mt-6 grid gap-5 xl:grid-cols-[1fr_1.5fr]">
+              <article className="dashboard-panel p-6">
+                <div className="mb-5">
+                  <p className="panel-kicker">Nova visão</p>
+                  <h2 className="panel-title">Passagens brutas por risco</h2>
+                  <p className="panel-subtitle">Contagem geral sem agrupamento por CPF. Total: {data.rawPassages.total.toLocaleString('pt-BR')}.</p>
+                </div>
+
+                <div className="h-[340px]">
+                  {rawGeneralChartData.length === 0 ? (
+                    <EmptyChart message="Sem passagens brutas para o período selecionado." />
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={rawGeneralChartData} margin={{ top: 16, right: 12, left: -10, bottom: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
+                        <XAxis dataKey="risco" tick={{ fontSize: 12, fill: '#78716c' }} tickLine={false} axisLine={{ stroke: '#d6d3d1' }} />
+                        <YAxis tick={{ fontSize: 12, fill: '#78716c' }} tickLine={false} axisLine={{ stroke: '#d6d3d1' }} />
+                        <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e7e5e4', boxShadow: '0 12px 30px rgba(0,0,0,.08)' }} />
+                        <Bar dataKey="count" name="Total" fill="#0f4c81" radius={[8, 8, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </article>
+
+              <article className="dashboard-panel p-6">
+                <div className="mb-5">
+                  <p className="panel-kicker">Nova visão</p>
+                  <h2 className="panel-title">Passagens brutas por cargo</h2>
+                  <p className="panel-subtitle">Composição de risco por cargo considerando todas as passagens.</p>
+                </div>
+
+                <div className="h-[340px]">
+                  {rawByCargoChartData.length === 0 ? (
+                    <EmptyChart message="Sem distribuição de passagens por cargo no período." />
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={rawByCargoChartData} margin={{ top: 16, right: 12, left: -10, bottom: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" />
+                        <XAxis dataKey="cargo" tick={{ fontSize: 11, fill: '#78716c' }} interval={0} angle={-12} textAnchor="end" height={70} tickLine={false} axisLine={{ stroke: '#d6d3d1' }} />
+                        <YAxis tick={{ fontSize: 12, fill: '#78716c' }} tickLine={false} axisLine={{ stroke: '#d6d3d1' }} />
+                        <Tooltip contentStyle={{ borderRadius: 16, border: '1px solid #e7e5e4', boxShadow: '0 12px 30px rgba(0,0,0,.08)' }} />
+                        <Legend />
+                        <Bar dataKey="BAIXO" fill={RISK_COLORS.BAIXO} radius={[5, 5, 0, 0]} />
+                        <Bar dataKey="MEDIO" fill={RISK_COLORS.MEDIO} radius={[5, 5, 0, 0]} />
+                        <Bar dataKey="ALTO" fill={RISK_COLORS.ALTO} radius={[5, 5, 0, 0]} />
+                        <Bar dataKey="MUITO_ALTO" fill={RISK_COLORS.MUITO_ALTO} radius={[5, 5, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
               </article>
             </section>
 
