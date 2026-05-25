@@ -29,6 +29,8 @@ interface ExtractedRow {
   ULTIMA_FUNCAO: string
   CIDADE?: string
   ESTADO?: string
+  CHAPA?: string
+  PROGRAMA?: string
 }
 
 interface ClassifiedRow {
@@ -343,6 +345,8 @@ function extractRows(rawRows: InputRow[], deduplicateByCpfAndDay = true): Extrac
       ULTIMA_FUNCAO: deriveUltimaFuncao(row),
       CIDADE: row.CIDADE ? String(row.CIDADE) : undefined,
       ESTADO: row.ESTADO ? String(row.ESTADO) : undefined,
+      CHAPA: row.CHAPA ? String(row.CHAPA) : undefined,
+      PROGRAMA: row.PROGRAMA ? String(row.PROGRAMA) : undefined,
     })
   })
 
@@ -520,6 +524,25 @@ function buildRawDistributions(rows: ExtractedRow[]): {
   }
 }
 
+function dedupRawRows(rows: ExtractedRow[]): ExtractedRow[] {
+  const seen = new Set<string>()
+  return rows.filter((row) => {
+    const key = [
+      row.CPF,
+      row.DATA_DIA,
+      row.CHAPA ?? '',
+      row.CIDADE ?? '',
+      row.ESTADO ?? '',
+      row.PROGRAMA ?? '',
+      row.RISCO,
+      row.ULTIMA_FUNCAO,
+    ].join('__')
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 function mean(values: number[]): number {
   if (values.length === 0) return 0
   return values.reduce((acc, v) => acc + v, 0) / values.length
@@ -535,10 +558,11 @@ function std(values: number[]): number {
 function assemblePayload(period: Period, rawRows: InputRow[], mode: 'pool' | 'mock-fallback', warning?: string): TurnoverPayload {
   const extractedRows = extractRows(rawRows)
   const extractedRowsWithoutDedup = extractRows(rawRows, false)
+  const dedupedRawRows = dedupRawRows(extractedRowsWithoutDedup)
   const classifiedRows = processAndClassify(extractedRows)
   const dailyRows = buildDailyRows(classifiedRows)
   const distribution = buildDistributionFromClassified(classifiedRows)
-  const rawDistributions = buildRawDistributions(extractedRowsWithoutDedup)
+  const rawDistributions = buildRawDistributions(dedupedRawRows)
 
   const scoreValues = classifiedRows.map((r) => r.SCORE_TURNOVER)
   const mediaGeral = mean(scoreValues)
@@ -587,7 +611,7 @@ function assemblePayload(period: Period, rawRows: InputRow[], mode: 'pool' | 'mo
     dailyScoreByCargo: dailyRows,
     riskDistribution: distribution,
     rawPassages: {
-      total: extractedRowsWithoutDedup.length,
+      total: dedupedRawRows.length,
       riskDistributionGeneral: rawDistributions.riskDistributionGeneral,
       riskDistributionByCargo: rawDistributions.riskDistributionByCargo,
     },
